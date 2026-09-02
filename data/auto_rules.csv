@@ -1,0 +1,13 @@
+rule_id,rule_name,action,schedule,scope,firings
+R01,Turn OFF | Total Days >= 5 | OWN RSOC,Turn OFF,every 30 minutes,"OWN RSOC adsets, all accounts",4
+R02,Budget Decrease | OWN RSOC | -30 < ROI <= -10,Decrease -20% (min 9),every 30 minutes,"OWN RSOC adsets, all accounts",23
+R03,Turn Off | positive_days = 0 | total_days > 2 | OWN RSOC,Turn OFF,every 30 minutes,"OWN RSOC adsets, all accounts",36
+R04,Turn Off - OWN RSOC | Total Days = 1 | budget > 35%| ROI < -50%,Turn OFF,every 30 minutes,"OWN RSOC adsets, all accounts",109
+R05,Turn Off | OWN RSOC | Total Profit <= -2.5$ | budget_usage_today >= 15%,Turn OFF,every 30 minutes,"OWN RSOC adsets, all accounts",7
+R06,Turn Off | today_profit <=  -1.25 $| total_days <= 3 | total profit <=-4$ | OWN RSOC,Turn OFF,every 30 minutes,"OWN RSOC adsets, all accounts",1
+R07,Budget Decrease | OWN RSOC | -50 <= ROI | Budget > 65$,Decrease -40% (min 9),every 30 minutes,"OWN RSOC adsets, all accounts",1
+R08,Turn OFF | Total Days = 4 | OWN RSOC,Turn OFF,every 30 minutes,"OWN RSOC adsets, all accounts",15
+R09,Turn On | Automation Mistake - Today | OWN RSOC,Turn ON,every 30 minutes,"OWN RSOC adsets, all accounts",8
+R10,Budget Decrease | OWN RSOC | -10 < ROI <= 5 | Budget >= 100$,Decrease -15% (min 9),every 30 minutes,"OWN RSOC adsets, all accounts",2
+R11,Turn Off | positive_days = 0 | total_days > 3 | OWN RSOC,Turn OFF,every 30 minutes,"OWN RSOC adsets, all accounts",2
+R12,Budget Decrease | OWN RSOC | ROI <= -50 | Budget <= 65$,Decrease -40% (min 9),every 30 minutes,"OWN RSOC adsets, all accounts",6

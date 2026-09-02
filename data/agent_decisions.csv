@@ -1,0 +1,6 @@
+adset_id,decision_date,action,amount,confidence,reasoning,data_quality_flags,test_case_description
+31255165214890,2026-06-08,escalate,,0.0,Model returned invalid JSON: Expecting value: line 1 column 1 (char 0),['json_parse_error'],Task A mistake case
+730115608042691299,2026-06-11,escalate,,0.0,Pre-check escalation: insufficient_data_days_1,['insufficient_data_days_1'],Early spend_day_no test
+730129450634378122,2026-06-12,escalate,,0.0,Pre-check escalation: recent_buyer_action_conflict_2,['recent_buyer_action_conflict_2'],Random active adset
+730125087398796770,2026-06-11,escalate,,0.0,Pre-check escalation: recent_buyer_action_conflict_1,['recent_buyer_action_conflict_1'],Random active adset
+730128434697262830,2026-06-12,escalate,,0.0,Pre-check escalation: recent_buyer_action_conflict_2,['recent_buyer_action_conflict_2'],Random active adset
