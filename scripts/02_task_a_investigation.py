@@ -62,33 +62,62 @@ for table_name, df in dataframes.items():
     conn.register(table_name, df)
     print(f"  ✓ Registered: {table_name}")
 
-# Step 3: Filter to SUCCESS only and report exclusions
-print("\n[3] Filtering rule_executions to response='SUCCESS' only...")
+# Step 3: Verify account scope
+print("\n[3] Verifying account scope...")
+account_check = conn.execute("""
+    SELECT account_id, COUNT(*) as count
+    FROM rule_executions
+    GROUP BY account_id
+""").fetchall()
+print(f"  Accounts in rule_executions:")
+for acc_id, count in account_check:
+    print(f"    {acc_id}: {count:,} rows")
+
+# Step 4: Filter to SUCCESS only and report exclusions with accurate split
+print("\n[4] Filtering rule_executions to response='SUCCESS' only...")
 total_rule_executions = conn.execute("SELECT COUNT(*) FROM rule_executions").fetchone()[0]
+
+# Count true API failures (OAuth errors)
+api_failures = conn.execute("""
+    SELECT COUNT(*)
+    FROM rule_executions
+    WHERE response LIKE '%OAuth%' OR response LIKE '%token%'
+""").fetchone()[0]
+
+# Count system no-ops ("No budget to change")
+no_ops = conn.execute("""
+    SELECT COUNT(*)
+    FROM rule_executions
+    WHERE response = '"No budget to change"' OR response LIKE '%No budget%'
+""").fetchone()[0]
+
+# Total non-SUCCESS
 failed_executions = conn.execute("""
-    SELECT COUNT(*) 
-    FROM rule_executions 
+    SELECT COUNT(*)
+    FROM rule_executions
     WHERE response != 'SUCCESS' OR response IS NULL
 """).fetchone()[0]
+
 success_executions = total_rule_executions - failed_executions
 
 print(f"  Total rule_executions rows: {total_rule_executions:,}")
 print(f"  Excluded (non-SUCCESS): {failed_executions:,}")
-print(f"  Reason: Failed API calls never executed on Meta, so cannot cause real mistakes")
+print(f"    - API failures (OAuth/token): {api_failures:,}")
+print(f"    - System no-ops (No budget to change): {no_ops:,}")
 print(f"  Remaining (SUCCESS): {success_executions:,}")
 
-# Step 4: Filter to Turn Off actions
-print("\n[4] Filtering to 'Turn Off' actions...")
+# Step 5: Filter to Turn Off actions
+print("\n[5] Filtering to 'Turn Off' actions...")
 turn_off_count = conn.execute("""
-    SELECT COUNT(*) 
-    FROM rule_executions 
-    WHERE response = 'SUCCESS' 
+    SELECT COUNT(*)
+    FROM rule_executions
+    WHERE response = 'SUCCESS'
     AND (LOWER(action_name) LIKE '%turn off%' OR LOWER(action_name) LIKE '%turn_off%')
 """).fetchone()[0]
 print(f"  Turn Off actions (SUCCESS only): {turn_off_count:,}")
 
-# Step 5-7: Join and identify mistakes
-print("\n[5-7] Joining to daily_adset_performance and identifying mistakes...")
+# Step 6-8: Join and identify mistakes
+print("\n[6-8] Joining to daily_adset_performance and identifying mistakes...")
 print("  Criteria: Rule saw negative ROI but finalized profit was positive")
 
 mistake_query = """
@@ -140,7 +169,20 @@ mistakes_df = mistakes_df.sort_values('action_time').drop_duplicates(subset=['ad
 print(f"  Total Turn Off actions matched to daily performance: {len(results_df):,}")
 print(f"  Flagged as likely unique mistakes (deduplicated): {len(mistakes_df):,}")
 
-# Step 8-9: Analysis and reporting
+# Calculate overall rule impact (all Turn Off actions)
+print("\n[9] Calculating overall rule impact...")
+overall_spend = results_df['spend'].sum()
+overall_profit = results_df['profit'].sum()
+overall_revenue = results_df['revenue'].sum()
+overall_roi = (overall_profit / overall_spend) if overall_spend > 0 else 0
+
+print(f"  Aggregate finalized metrics for ALL {len(results_df):,} Turn Off actions:")
+print(f"    Total spend: ${overall_spend:,.2f}")
+print(f"    Total revenue: ${overall_revenue:,.2f}")
+print(f"    Total profit: ${overall_profit:,.2f}")
+print(f"    Overall ROI: {overall_roi:.2%}")
+
+# Step 10-11: Analysis and reporting
 if len(mistakes_df) > 0:
     total_spend = mistakes_df['spend'].sum()
     total_profit = mistakes_df['profit'].sum()
@@ -192,21 +234,53 @@ num_null_adset = len(null_adset_buyer_actions)
 # Calculate matched vs total turn off actions
 matched_turn_offs = len(results_df)
 
+# Get account scope info
+account_scope = conn.execute("""
+    SELECT account_id, COUNT(*) as count
+    FROM rule_executions
+    GROUP BY account_id
+""").fetchall()
+account_id = account_scope[0][0] if account_scope else "Unknown"
+
 # Build comprehensive investigation content
 investigation_content = f"""
 ## Methodology — Reconstructing Rule Activity
+
+### Analysis Scope
+
+**Account coverage**: This analysis covers {len(account_scope)} account(s) from `rule_executions.csv`:
+"""
+
+for acc_id, count in account_scope:
+    investigation_content += f"- `{acc_id}`: {count:,} rule execution rows\n"
+
+investigation_content += f"""
+**Scope limitation**: This represents 1 out of 6 total ad accounts in the system. Findings may not generalize to other accounts with different campaign structures, budgets, or optimization strategies.
 
 ### Data Loading and Filtering
 
 **Total rule execution records**: {total_rule_executions:,} rows in `rule_executions.csv`
 
-**Excluded records**: {failed_executions:,} rows ({failed_executions/total_rule_executions*100:.1f}%) with `response != 'SUCCESS'`
+**Excluded records**: {failed_executions:,} rows ({failed_executions/total_rule_executions*100:.1f}%) with `response != 'SUCCESS'`, broken down as:
+- {api_failures:,} true API failures (OAuth token invalidation, rate limiting)
+- {no_ops:,} system no-ops ("No budget to change" — legitimate cases where the rule determined no action was needed)
 
-**Rationale for exclusion**: These rows represent logged API call attempts that failed (primarily due to OAuth token invalidation or rate limiting). Since these actions never actually executed on Meta's platform, they could not have caused real financial impact. Including them would artificially inflate the mistake count with hypothetical scenarios that never occurred.
+**Rationale for exclusion**: API failures never executed on Meta's platform and could not have caused real financial impact. System no-ops represent correct rule behavior (no change needed), not mistakes. Including either would artificially inflate or distort the analysis.
 
 **Successful Turn Off actions**: {turn_off_count:,} rows (filtered to `action_name` containing "Turn Off")
 
 **Matched to same-day performance data**: {matched_turn_offs:,} of {turn_off_count:,} Turn Off actions ({matched_turn_offs/turn_off_count*100:.1f}%) successfully joined to `daily_adset_performance` on `adset_id` and `action_date = date`
+
+### Overall Rule Impact
+
+To fully address "how much money did rule-driven actions save or burn," we calculated aggregate finalized metrics for ALL {matched_turn_offs:,} successful Turn Off actions (not just the mistakes):
+
+- **Total spend**: ${overall_spend:,.2f}
+- **Total revenue**: ${overall_revenue:,.2f}
+- **Total profit**: ${overall_profit:,.2f}
+- **Overall ROI**: {overall_roi:.2%}
+
+This represents the finalized same-day financial outcome for all adsets that were turned off by rules during the analysis period.
 
 ### Mistake Identification Criteria
 
@@ -231,9 +305,9 @@ The following cases illustrate Turn Off actions where the rule appears to have a
 
 """
 
-# Add case studies for deduplicated mistakes
+# Add case studies for deduplicated mistakes (top 2 only for strongest cases)
 if len(mistakes_df) > 0:
-    top_cases = mistakes_df.nlargest(min(5, len(mistakes_df)), 'profit')
+    top_cases = mistakes_df.nlargest(min(2, len(mistakes_df)), 'profit')
     
     for idx, row in enumerate(top_cases.itertuples(), 1):
         today_roi_str = f"{row.today_roi_at_action:.2%}" if pd.notna(row.today_roi_at_action) else "N/A"
@@ -276,11 +350,13 @@ investigation_content += f"""
 
 The following data quality issues were identified during analysis:
 
+- **Duplicate rule firing on adset 31255165214890**: This adset was turned off twice within 30 minutes (at 22:30 and 23:00 on 2026-06-07) by the same rule. This suggests a possible idempotency gap where the rule system may not check current adset status before re-firing on its 30-minute schedule. The duplicate was removed in this analysis to avoid double-counting the same underlying mistake.
+
 - **{num_duplicates:,} exact-duplicate rows in `daily_adset_performance.csv`**: Rows where `adset_id` + `date` are identical across all columns. These were not deduplicated for this analysis since they did not affect the mistake-flagging query (which uses INNER JOIN and would match duplicates identically). However, this represents a data integrity concern in the source system that should be investigated.
 
 - **{num_inconsistent:,} rows with chronologically inconsistent `spend_day_no`**: Cases where `spend_day_no = 0` but `first_spend_date` is LATER than the row's own `date`. This is logically impossible (an adset cannot have its first spend date in the future). These rows were flagged but not used in this analysis, as they represent data corruption or ETL errors.
 
-- **{failed_executions:,} of {total_rule_executions:,} rule execution rows ({failed_executions/total_rule_executions*100:.1f}%) had non-SUCCESS API responses**: Primarily OAuth token invalidation errors. These were excluded from all financial impact calculations since the action never executed on Meta's platform and therefore could not have caused real financial impact.
+- **{failed_executions:,} of {total_rule_executions:,} rule execution rows ({failed_executions/total_rule_executions*100:.1f}%) had non-SUCCESS API responses**: Split as {api_failures:,} true API failures (OAuth token invalidation, rate limiting) and {no_ops:,} system no-ops ("No budget to change"). API failures were excluded from financial impact calculations since they never executed on Meta. System no-ops represent correct rule behavior (no change needed) and were also excluded.
 
 - **Risk of float64 precision loss on 18-digit adset IDs**: When pandas infers dtype automatically, 18-digit integer IDs can lose precision due to float64 representation limits. This was mitigated by forcing `dtype=str` on all ID columns (`adset_id`, `campaign_id`, `account_id`, `fb_ad_account_id`) at load time, ensuring exact string matching in all joins.
 

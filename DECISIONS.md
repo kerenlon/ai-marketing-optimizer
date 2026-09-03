@@ -1,3 +1,5 @@
+# AI Usage & Architecture Decisions Log
+
 ### 1. Environment & AI Tooling Setup
 * **Action:** Selected Roo Code (API-based VS Code extension) instead of the standard Claude Code CLI.
 * **Reasoning:** Direct pay-as-you-go API billing provides granular per-request cost visibility, which better supports the strict $10 budget-tracking requirement than a flat subscription would.
@@ -37,3 +39,20 @@
 ### 10. Parameterizing SQL Queries for Injection Defense
 * **Action:** Converted f-string query interpolations within `build_context` to parameterized DuckDB queries utilizing `?` placeholders.
 * **Reasoning:** Although dataset identifiers are system-generated rather than user-controlled, adopting parameterization universally establishes a defensive coding baseline against injection vulnerabilities.
+
+### 11. Second Model Name Guess Failure
+* **Action:** After fixing the first deprecated model, a follow-up attempt to "self-correct" the model string produced ANOTHER wrong guess (`claude-3-haiku-20240307`), also returning a 404, before manually specifying the exact correct string (`claude-haiku-4-5-20251001`).
+* **Reasoning:** This showed the AI tool guessing plausible-sounding model names from training data rather than verifying against current docs. This reinforced the need for explicit, manually-confirmed model strings rather than trusting AI-suggested "fixes" to AI-suggested code.
+
+### 12. Checkpoint/Resume Design Over Simple Retry
+* **Action:** For the full-pass execution across 2,064 combinations, chose append-per-decision CSV checkpointing with a resume-on-restart mechanism, rather than just wrapping API calls in a retry decorator.
+* **Reasoning:** Retries handle transient network errors but not a full local crash. Checkpointing survives worse failure modes without re-paying for already-completed API calls. 
+* **Result:** This was validated for real—the local machine shut down mid-run, and on restart the pipeline correctly skipped 589 already-processed combinations, completing the remaining 1,475 without any duplicate spend.
+
+### 13. Escalate-vs-Budget-Exhausted Ordering Bug
+* **Action:** Initial full-pass logic checked budget exhaustion before pre-check escalation, causing free escalations (which needed no LLM call) to be incorrectly overwritten with a "budget exhausted" placeholder once the cap was hit.
+* **Reasoning:** Reordered so pre-check escalations are always recorded with their real reason regardless of budget state. Only genuine cases that "would have needed an LLM call but couldn't afford it" get the budget-exhausted flag.
+
+### 14. Data-Driven Comparison Instead of Narrative
+* **Action:** Built `scripts/05_evaluate_overlaps.py` to join `agent_decisions.csv` against `rule_executions.csv` and `buyer_actions.csv` on real `adset_id` + `date`, rather than writing a general qualitative comparison paragraph.
+* **Reasoning:** An early draft of the Task C comparison section made plausible-sounding claims without citing specific cases. Enforcing the actual join surfaced concrete IDs (e.g., `31191755212537`) whose finalized outcomes could be verified against both the rule's and the agent's decisions—including a direct cross-reference to the same adset already documented as a Task A mistake case.
