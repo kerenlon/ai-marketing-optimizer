@@ -1,0 +1,4 @@
+anthropic==0.113.0
+pandas==2.3.3
+duckdb
+python-dotenv
