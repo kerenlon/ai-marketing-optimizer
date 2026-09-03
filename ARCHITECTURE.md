@@ -81,8 +81,6 @@ flowchart TD
     M -->|Feedback: quality metrics| E
     D --> N[Human Review Queue]
 
-## 5. Data Flow Architecture
-
 1.  **Ingestion (Cron / Webhook):** Meta API streams performance data into raw staging tables.
 2.  **Monitor (SQL Layer):** 
     *   Joins `daily_adset_performance` against `buyer_actions` and `rule_executions`.
