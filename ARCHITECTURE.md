@@ -61,6 +61,28 @@ A single boolean flag (`AGENT_ACTIVE=False`) in the central `.env` file or datab
 
 ## 5. Data Flow Architecture
 
+```mermaid
+flowchart TD
+    A[Meta API / Raw Staging Tables] --> B[Monitor: SQL Layer]
+    B -->|Join daily_adset_performance<br/>vs rule_executions 6h<br/>vs buyer_actions 24h| C{Idempotency /<br/>Conflict Check}
+    C -->|Blocked: recent action<br/>or cold-start| D[Escalate: No LLM Call]
+    C -->|Clear: proceed| E[Context Builder<br/>Python - compressed per-adset JSON]
+    E --> F{Complexity Router}
+    F -->|Routine 80%| G[Analyst: Haiku 4.5]
+    F -->|Complex/volatile 20%| H[Analyst: Sonnet 5]
+    G --> I[Decision: action + confidence + reasoning]
+    H --> I
+    I --> J{Decision Boundary Check}
+    J -->|Within limits| K[Executor: Meta API write]
+    J -->|Exceeds limits<br/>or escalate flag| D
+    K --> L[State Persistence:<br/>agent_decisions.csv / DB]
+    L --> B
+    L --> M[Auditor: Sonnet 5<br/>T+2 daily batch review]
+    M -->|Feedback: quality metrics| E
+    D --> N[Human Review Queue]
+
+## 5. Data Flow Architecture
+
 1.  **Ingestion (Cron / Webhook):** Meta API streams performance data into raw staging tables.
 2.  **Monitor (SQL Layer):** 
     *   Joins `daily_adset_performance` against `buyer_actions` and `rule_executions`.
